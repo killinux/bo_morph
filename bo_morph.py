@@ -81,49 +81,55 @@ EXPRESSION_PRESETS = {
     "まばたき": {
         "name_e": "Blink", "category": "EYE",
         "bones": {
-            "eyelid_upper_L": ("close", 25.0, 0.15),
-            "eyelid_upper_R": ("close", 25.0, 0.15),
-            "eyelid_lower_L": ("close", -10.0, -0.05),
-            "eyelid_lower_R": ("close", -10.0, -0.05),
+            "eyelid_upper_L": ("close", -5.0, 0.13),
+            "eyelid_upper_R": ("close", -5.0, 0.13),
+            "eyelid_lower_L": ("close", 2.0, -0.04),
+            "eyelid_lower_R": ("close", 2.0, -0.04),
+            "eyeball_L": ("close", 0.0, (-0.039, 0.003, -0.031)),
+            "eyeball_R": ("close", 0.0, (0.038, 0.003, -0.033)),
         },
     },
     "笑い": {
         "name_e": "Smile", "category": "EYE",
         "bones": {
-            "eyelid_upper_L": ("close", 25.0, 0.12),
-            "eyelid_upper_R": ("close", 25.0, 0.12),
-            "eyelid_lower_L": ("close", -25.0, -0.15),
-            "eyelid_lower_R": ("close", -25.0, -0.15),
-            "mouth_corner_L": ("close", -8.0, (0, 0, 0)),
-            "mouth_corner_R": ("close", -8.0, (0, 0, 0)),
+            "eyelid_upper_L": ("close", 5.0, 0.06),
+            "eyelid_upper_R": ("close", 5.0, 0.06),
+            "eyelid_lower_L": ("close", -5.0, -0.14),
+            "eyelid_lower_R": ("close", -5.0, -0.14),
+            "eyeball_L": ("close", 0.0, (-0.039, 0.003, -0.031)),
+            "eyeball_R": ("close", 0.0, (0.038, 0.003, -0.033)),
+            "cheek_L": ("close", -5.0, -0.05),
+            "cheek_R": ("close", -5.0, -0.05),
+            "mouth_corner_L": ("close", -5.0, (0, 0, 0)),
+            "mouth_corner_R": ("close", -5.0, (0, 0, 0)),
         },
     },
     "ウィンク": {
         "name_e": "Wink", "category": "EYE",
         "bones": {
-            "eyelid_upper_L": ("close", 40.0, 0.25),
-            "eyelid_lower_L": ("close", -15.0, -0.08),
+            "eyelid_upper_L": ("close", 8.0, 0.13),
+            "eyelid_lower_L": ("close", -4.0, -0.04),
         },
     },
     "ウィンク右": {
         "name_e": "Wink_R", "category": "EYE",
         "bones": {
-            "eyelid_upper_R": ("close", 40.0, 0.25),
-            "eyelid_lower_R": ("close", -15.0, -0.08),
+            "eyelid_upper_R": ("close", 8.0, 0.13),
+            "eyelid_lower_R": ("close", -4.0, -0.04),
         },
     },
     "ウィンク２": {
         "name_e": "Wink2", "category": "EYE",
         "bones": {
-            "eyelid_upper_L": ("close", 20.0, 0.12),
-            "eyelid_lower_L": ("close", -30.0, -0.18),
+            "eyelid_upper_L": ("close", 5.0, 0.07),
+            "eyelid_lower_L": ("close", -8.0, -0.12),
         },
     },
     "ウィンク２右": {
         "name_e": "Wink2_R", "category": "EYE",
         "bones": {
-            "eyelid_upper_R": ("close", 20.0, 0.12),
-            "eyelid_lower_R": ("close", -30.0, -0.18),
+            "eyelid_upper_R": ("close", 5.0, 0.07),
+            "eyelid_lower_R": ("close", -8.0, -0.12),
         },
     },
     "あ": {
