@@ -81,8 +81,8 @@ EXPRESSION_PRESETS = {
     "まばたき": {
         "name_e": "Blink", "category": "EYE",
         "bones": {
-            "eyelid_upper_L": ("close", -5.0, 0.13),
-            "eyelid_upper_R": ("close", -5.0, 0.13),
+            "eyelid_upper_L": ("close", 7.0, 0.11),
+            "eyelid_upper_R": ("close", 7.0, 0.11),
             "eyelid_lower_L": ("close", 2.0, -0.04),
             "eyelid_lower_R": ("close", 2.0, -0.04),
             "eyeball_L": ("close", 0.0, (-0.039, 0.003, -0.031)),
@@ -313,6 +313,126 @@ def find_mmd_root(obj):
     return None
 
 
+# ================================================================
+# Auto-Calibrate Blink: curve fitting upper eyelid to lower eyelid
+# ================================================================
+
+def _get_eyelid_boundary(mesh, eval_mesh, vg_name, mode="upper"):
+    """Extract the edge of an eyelid (the row of vertices closest to the eye opening)."""
+    vg = mesh.vertex_groups.get(vg_name)
+    if not vg:
+        return []
+    bins = {}
+    for v in mesh.data.vertices:
+        for g in v.groups:
+            if g.group == vg.index and g.weight > 0.05:
+                pos = eval_mesh.matrix_world @ eval_mesh.data.vertices[v.index].co
+                x_bin = round(pos.x * 50) / 50
+                if x_bin not in bins:
+                    bins[x_bin] = []
+                bins[x_bin].append((v.index, g.weight, pos.x, pos.y, pos.z))
+    boundary = []
+    for x_bin in sorted(bins.keys()):
+        group = bins[x_bin]
+        if mode == "upper":
+            best = min(group, key=lambda v: v[4])
+        else:
+            best = max(group, key=lambda v: v[4])
+        boundary.append(best)
+    return boundary
+
+
+def auto_calibrate_blink(armature, upper_bone_name, lower_bone_name):
+    """Find optimal (rotation, translation) for upper eyelid to align with lower eyelid.
+
+    Returns (rot_degrees, trans_units) or None if bones/mesh not found.
+    Works on any model with eyelid bones and weighted mesh.
+    """
+    meshes = [o for o in bpy.data.objects if o.type == 'MESH' and o.parent == armature]
+    if not meshes:
+        return None
+
+    bone = armature.data.bones.get(upper_bone_name)
+    if not bone:
+        return None
+
+    bpy.context.view_layer.objects.active = armature
+    bpy.ops.object.mode_set(mode='POSE')
+    for pb in armature.pose.bones:
+        pb.location = (0, 0, 0)
+        pb.rotation_quaternion = (1, 0, 0, 0)
+    bpy.context.view_layer.update()
+
+    upper_edge = []
+    lower_edge = []
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    for mesh_obj in meshes:
+        eval_m = mesh_obj.evaluated_get(depsgraph)
+        upper_edge += _get_eyelid_boundary(mesh_obj, eval_m, upper_bone_name, "upper")
+        lower_edge += _get_eyelid_boundary(mesh_obj, eval_m, lower_bone_name, "lower")
+
+    if len(upper_edge) < 3 or len(lower_edge) < 3:
+        return None
+
+    bone_head = Vector(bone.head_local)
+    mat = bone.matrix_local.to_3x3()
+    bone_dir = (mat @ Vector((0, 1, 0))).normalized()
+    close_world = Vector((0, 0, -1))
+    rot_axis_world = bone_dir.cross(close_world)
+    if rot_axis_world.length < 0.001:
+        return None
+    rot_axis_world.normalize()
+
+    best_cost = 999
+    best_params = (0, 0)
+    for rot_deg in range(-15, 20):
+        for trans_100 in range(0, 30):
+            trans = trans_100 / 100.0
+            total_dist = 0
+            for _, w, vx, vy, vz in upper_edge:
+                dz_t = close_world.z * trans * w
+                dy_t = close_world.y * trans * w
+                dx_t = close_world.x * trans * w
+                rel = Vector((vx, vy, vz)) - bone_head
+                q = Quaternion(rot_axis_world, math.radians(rot_deg * w))
+                rotated = q @ rel
+                nx = vx + dx_t + rotated.x - rel.x
+                ny = vy + dy_t + rotated.y - rel.y
+                nz = vz + dz_t + rotated.z - rel.z
+                min_d = min(math.sqrt((nx-lx)**2 + (ny-ly)**2 + (nz-lz)**2)
+                           for _, _, lx, ly, lz in lower_edge)
+                total_dist += min_d
+            avg = total_dist / len(upper_edge)
+            if avg < best_cost:
+                best_cost = avg
+                best_params = (rot_deg, trans)
+
+    return best_params[0], best_params[1], best_cost
+
+
+def auto_calibrate_all_blinks(armature):
+    """Auto-calibrate blink parameters for all eyelid bone pairs found on the model.
+
+    Returns dict: {
+        "eyelid_upper_L": (rot, trans, cost),
+        "eyelid_upper_R": (rot, trans, cost),
+    }
+    """
+    results = {}
+    pairs = [
+        ("eyelid_upper_L", "eyelid_lower_L"),
+        ("eyelid_upper_R", "eyelid_lower_R"),
+    ]
+    for upper_key, lower_key in pairs:
+        upper_name = resolve_bone_name(armature, upper_key)
+        lower_name = resolve_bone_name(armature, lower_key)
+        if upper_name and lower_name:
+            result = auto_calibrate_blink(armature, upper_name, lower_name)
+            if result:
+                results[upper_key] = result
+    return results
+
+
 def compute_rotation(armature, bone_name, semantic_axis, angle_degrees):
     bone = armature.data.bones.get(bone_name)
     if not bone:
@@ -469,7 +589,10 @@ class BoneMorphGenerator:
 
         return count
 
-    def generate_presets(self, category_filter=None):
+    def generate_presets(self, category_filter=None, auto_blink=True):
+        if auto_blink:
+            self._apply_auto_blink()
+
         created = []
         skipped = []
         for jp_name, preset in EXPRESSION_PRESETS.items():
@@ -481,6 +604,27 @@ class BoneMorphGenerator:
             else:
                 skipped.append(jp_name)
         return created, skipped
+
+    def _apply_auto_blink(self):
+        """Override blink preset values with auto-calibrated optimal parameters."""
+        cal = auto_calibrate_all_blinks(self.armature)
+        if not cal:
+            return
+
+        eyeball_loc_L = (-0.039, 0.003, -0.031)
+        eyeball_loc_R = (0.038, 0.003, -0.033)
+
+        blink_morphs = ["まばたき", "ウィンク", "ウィンク右"]
+        for morph_name in blink_morphs:
+            preset = EXPRESSION_PRESETS.get(morph_name)
+            if not preset:
+                continue
+            bones = dict(preset["bones"])
+            for key in ["eyelid_upper_L", "eyelid_upper_R"]:
+                if key in bones and key in cal:
+                    rot, trans, cost = cal[key]
+                    bones[key] = ("close", rot, trans)
+            preset["bones"] = bones
 
     def register_in_display(self):
         frames = self.mmd_root.display_item_frames
@@ -514,6 +658,28 @@ class BoneMorphGenerator:
 # ================================================================
 # Operators
 # ================================================================
+
+class BOMP_OT_auto_calibrate_blink(Operator):
+    bl_idname = "bomp.auto_calibrate_blink"
+    bl_label = "Auto-Calibrate Blink"
+    bl_description = "Find optimal blink parameters by fitting upper eyelid curve to lower eyelid"
+    bl_options = {'REGISTER'}
+
+    def execute(self, context):
+        obj = context.active_object
+        if not obj or obj.type != 'ARMATURE':
+            self.report({'ERROR'}, "Select an armature")
+            return {'CANCELLED'}
+
+        results = auto_calibrate_all_blinks(obj)
+        if not results:
+            self.report({'WARNING'}, "No eyelid bones found")
+            return {'CANCELLED'}
+
+        for key, (rot, trans, cost) in results.items():
+            self.report({'INFO'}, "%s: rot=%.1f, trans=%.3f, dist=%.4f" % (key, rot, trans, cost))
+        return {'FINISHED'}
+
 
 class BOMP_OT_generate_presets(Operator):
     bl_idname = "bomp.generate_presets"
@@ -739,6 +905,8 @@ class BOMP_PT_presets_panel(Panel):
         op = col.operator("bomp.generate_presets", text="Generate All", icon='ADD')
         op.category_filter = ""
 
+        col.operator("bomp.auto_calibrate_blink", text="Auto-Calibrate Blink", icon='VIEWZOOM')
+
         row = col.row(align=True)
         op = row.operator("bomp.generate_presets", text="Eye")
         op.category_filter = "EYE"
@@ -802,6 +970,7 @@ class BOMP_PT_capture_panel(Panel):
 # ================================================================
 
 classes = (
+    BOMP_OT_auto_calibrate_blink,
     BOMP_OT_generate_presets,
     BOMP_OT_capture_pose,
     BOMP_OT_preview_morph,
